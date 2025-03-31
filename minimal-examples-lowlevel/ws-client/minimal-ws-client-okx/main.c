@@ -17,16 +17,16 @@ struct range {
 };
 
 struct msg_client_okx {
-    struct lws_context *context;
-    struct lws *client_wsi;
-    struct lws_sorted_usec_list sul;  /* schedule connection retry */
+    lws_sorted_usec_list_t sul;  /* schedule connection retry */
+    lws_sorted_usec_list_t sul_hz;  /* 1hz summary */
     struct range price_range;
     struct range e_lat_range;
-    int connecting;
-    int retry;
+    struct lws *client_wsi;
+    uint16_t retry_count;
 };
 
 static struct msg_client_okx mco;
+static struct lws_context *context;
 static int interrupted;
 
 static void range_reset(struct range *r)
@@ -92,12 +92,9 @@ static void connect_client(struct lws_sorted_usec_list *sul)
     struct msg_client_okx *mco = lws_container_of(sul, struct msg_client_okx, sul);
     struct lws_client_connect_info i;
 
-    if (mco->connecting)
-        return;
-
     memset(&i, 0, sizeof(i));
 
-    i.context = mco->context;
+    i.context = context;
     i.port = WS_PORT;
     i.address = WS_SERVER;
     i.path = "/ws/v5/public";
@@ -110,12 +107,11 @@ static void connect_client(struct lws_sorted_usec_list *sul)
 
     if (!lws_client_connect_via_info(&i)) {
         lwsl_err("%s: client connect failed\n", __func__);
-        lws_sul_schedule(mco->context, 0, &mco->sul, connect_client,
-                LWS_US_PER_SEC);
+        if (mco->retry_count++ < 10)
+            lws_sul_schedule(context, 0, &mco->sul, connect_client,
+                    (uint64_t)LWS_US_PER_SEC * (1 << mco->retry_count));
         return;
     }
-
-    mco->connecting = 1;
 }
 
 __attribute__((used)) static int callback_okx(struct lws *wsi, enum lws_callback_reasons reason,
@@ -126,32 +122,33 @@ __attribute__((used)) static int callback_okx(struct lws *wsi, enum lws_callback
     struct timeval now;
     uint64_t latency_us;
 
-    if (!mco && reason != LWS_CALLBACK_PROTOCOL_INIT) {
-        return 0;
-    }
-
     switch (reason) {
         case LWS_CALLBACK_PROTOCOL_INIT:
-            mco->context = lws_get_context(wsi);
             mco->client_wsi = NULL;
-            mco->connecting = 0;
-            mco->retry = 0;
+            mco->retry_count = 0;
             /* Don't reset ranges here as they're already initialized in main */
 
             /* schedule first connection */
-            lws_sul_schedule(mco->context, 0, &mco->sul, connect_client, 1);
+            lws_sul_schedule(context, 0, &mco->sul, connect_client, 1);
+
+            /* schedule the 1Hz callback */
+            lws_sul_schedule(context, 0, &mco->sul_hz, sul_hz_cb, LWS_US_PER_SEC);
             break;
 
         case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
             lwsl_err("CLIENT_CONNECTION_ERROR: %s\n", in ? (char *)in : "(null)");
             mco->client_wsi = NULL;
-            mco->connecting = 0;
-            lws_sul_schedule(mco->context, 0, &mco->sul, connect_client,
-                    LWS_US_PER_SEC);
+
+            if (mco->retry_count++ < 10)
+                lws_sul_schedule(context, 0, &mco->sul, connect_client,
+                        (uint64_t)LWS_US_PER_SEC * (1 << mco->retry_count));
             break;
 
         case LWS_CALLBACK_CLIENT_ESTABLISHED:
-            lwsl_user("%s: established connection\n", __func__);
+            lwsl_user("Connected to OKX WebSocket server\n");
+            mco->retry_count = 0;
+
+            /* set a timer for 1 second */
             lws_set_timer_usecs(wsi, LWS_US_PER_SEC);
             /* subscribe to orderbook */
             if (lws_write(wsi, (unsigned char *)SUBSCRIBE_MSG,
@@ -179,9 +176,9 @@ __attribute__((used)) static int callback_okx(struct lws *wsi, enum lws_callback
         case LWS_CALLBACK_CLIENT_CLOSED:
             lwsl_user("Connection closed\n");
             mco->client_wsi = NULL;
-            mco->connecting = 0;
-            lws_sul_schedule(mco->context, 0, &mco->sul, connect_client,
-                    LWS_US_PER_SEC);
+            if (mco->retry_count++ < 10)
+                lws_sul_schedule(context, 0, &mco->sul, connect_client,
+                        (uint64_t)LWS_US_PER_SEC * (1 << mco->retry_count));
             break;
 
         default:
@@ -199,7 +196,6 @@ static void sigint_handler(int sig)
 int main(int argc, char **argv)
 {
     struct lws_context_creation_info info;
-    struct lws_context *context;
     int n = 0;
 
     signal(SIGINT, sigint_handler);
@@ -220,6 +216,9 @@ int main(int argc, char **argv)
         lwsl_err("lws init failed\n");
         return 1;
     }
+
+    /* Schedule the first connection attempt */
+    lws_sul_schedule(context, 0, &mco.sul, connect_client, 1);
 
     /* schedule the first client connection attempt to happen immediately */
     lws_sul_schedule(context, 0, &mco.sul, connect_client, 1);
