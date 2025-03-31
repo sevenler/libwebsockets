@@ -19,7 +19,7 @@ struct range {
 struct msg_client_okx {
     struct lws_context *context;
     struct lws *client_wsi;
-    struct lws_sorted_usec_list_t sul;  /* schedule connection retry */
+    struct lws_sorted_usec_list sul;  /* schedule connection retry */
     struct range price_range;
     struct range e_lat_range;
     int connecting;
@@ -53,11 +53,11 @@ static void range_add(struct range *r, unsigned long long val)
 }
 
 static const struct lws_protocols protocols[] = {
-    { "okx-protocol", NULL, 0, 0, },
+    { "okx-protocol", callback_okx, sizeof(struct msg_client_okx), 0, 0, NULL, 0 },
     LWS_PROTOCOL_LIST_TERM
 };
 
-static void sul_hz_cb(lws_sorted_usec_list_t *sul)
+static void sul_hz_cb(struct lws_sorted_usec_list *sul)
 {
     struct msg_client_okx *mco = lws_container_of(sul, struct msg_client_okx, sul);
 
@@ -83,7 +83,7 @@ static void sul_hz_cb(lws_sorted_usec_list_t *sul)
     lws_sul_schedule(mco->context, 0, &mco->sul, sul_hz_cb, LWS_US_PER_SEC);
 }
 
-static int connect_client(struct lws_sorted_usec_list_t *sul)
+static void connect_client(struct lws_sorted_usec_list *sul)
 {
     struct msg_client_okx *mco = lws_container_of(sul, struct msg_client_okx, sul);
     struct lws_client_connect_info i;
@@ -160,8 +160,8 @@ static int callback_okx(struct lws *wsi, enum lws_callback_reasons reason,
                 break;
 
             gettimeofday(&now, NULL);
-            latency_us = (now.tv_sec - start.tv_sec) * LWS_US_PER_SEC +
-                (now.tv_usec - start.tv_usec);
+            latency_us = ((uint64_t)(now.tv_sec - start.tv_sec)) * LWS_US_PER_SEC +
+                (uint64_t)(now.tv_usec - start.tv_usec);
             range_add(&mco->e_lat_range, latency_us);
 
             /* Process received data here */
