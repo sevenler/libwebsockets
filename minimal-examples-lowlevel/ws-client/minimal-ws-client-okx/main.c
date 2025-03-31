@@ -217,14 +217,13 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    lwsl_user("LWS minimal OKX client\n");
+
     /* Schedule the first connection attempt */
     lws_sul_schedule(context, 0, &mco.sul, connect_client, 1);
 
-    /* schedule the first client connection attempt to happen immediately */
-    lws_sul_schedule(context, 0, &mco.sul, connect_client, 1);
-
-    /* also schedule the 1Hz statistics callback */
-    lws_sul_schedule(context, 0, &mco.sul, sul_hz_cb, LWS_US_PER_SEC);
+    /* Schedule the 1Hz statistics callback */
+    lws_sul_schedule(context, 0, &mco.sul_hz, sul_hz_cb, LWS_US_PER_SEC);
 
     while (n >= 0 && !interrupted)
         n = lws_service(context, 0);
