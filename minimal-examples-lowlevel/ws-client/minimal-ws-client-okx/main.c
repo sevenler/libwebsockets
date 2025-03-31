@@ -89,7 +89,7 @@ static void connect_client(struct lws_sorted_usec_list *sul)
     struct lws_client_connect_info i;
 
     if (mco->connecting)
-        return 0;
+        return;
 
     memset(&i, 0, sizeof(i));
 
@@ -108,12 +108,10 @@ static void connect_client(struct lws_sorted_usec_list *sul)
         lwsl_err("%s: client connect failed\n", __func__);
         lws_sul_schedule(mco->context, 0, &mco->sul, connect_client,
                 LWS_US_PER_SEC);
-        return -1;
+        return;
     }
 
     mco->connecting = 1;
-
-    return 0;
 }
 
 static int callback_okx(struct lws *wsi, enum lws_callback_reasons reason,
