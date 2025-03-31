@@ -126,14 +126,17 @@ __attribute__((used)) static int callback_okx(struct lws *wsi, enum lws_callback
     struct timeval now;
     uint64_t latency_us;
 
+    if (!mco && reason != LWS_CALLBACK_PROTOCOL_INIT) {
+        return 0;
+    }
+
     switch (reason) {
         case LWS_CALLBACK_PROTOCOL_INIT:
-            range_reset(&mco->price_range);
-            range_reset(&mco->e_lat_range);
             mco->context = lws_get_context(wsi);
             mco->client_wsi = NULL;
             mco->connecting = 0;
             mco->retry = 0;
+            /* Don't reset ranges here as they're already initialized in main */
 
             /* schedule first connection */
             lws_sul_schedule(mco->context, 0, &mco->sul, connect_client, 1);
@@ -152,8 +155,10 @@ __attribute__((used)) static int callback_okx(struct lws *wsi, enum lws_callback
             lws_set_timer_usecs(wsi, LWS_US_PER_SEC);
             /* subscribe to orderbook */
             if (lws_write(wsi, (unsigned char *)SUBSCRIBE_MSG,
-                        strlen(SUBSCRIBE_MSG), LWS_WRITE_TEXT) < 0)
+                        strlen(SUBSCRIBE_MSG), LWS_WRITE_TEXT) < 0) {
+                lwsl_err("Failed to send subscription message\n");
                 return -1;
+            }
             gettimeofday(&start, NULL);
             break;
 
@@ -201,6 +206,9 @@ int main(int argc, char **argv)
 
     memset(&info, 0, sizeof info);
     memset(&mco, 0, sizeof mco);
+    
+    range_reset(&mco.price_range);
+    range_reset(&mco.e_lat_range);
 
     info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
     info.port = CONTEXT_PORT_NO_LISTEN;
