@@ -117,23 +117,41 @@ static void connect_client(struct lws_sorted_usec_list *sul)
 __attribute__((used)) static int callback_okx(struct lws *wsi, enum lws_callback_reasons reason,
         void *user, void *in, size_t len)
 {
-    struct msg_client_okx *mco = (struct msg_client_okx *)user;
-    static struct timeval start;
+    struct msg_client_okx *mco;
     struct timeval now;
     uint64_t latency_us;
 
+    if (!wsi)
+        return -1;
+
     switch (reason) {
         case LWS_CALLBACK_PROTOCOL_INIT:
-            mco->client_wsi = NULL;
-            mco->retry_count = 0;
-            /* Don't reset ranges here as they're already initialized in main */
+            memset(&mco, 0, sizeof(mco));
+            mco.client_wsi = NULL;
+            mco.retry_count = 0;
+            mco.start.tv_sec = 0;
+            mco.start.tv_usec = 0;
+            range_reset(&mco.price_range);
+            range_reset(&mco.e_lat_range);
 
             /* schedule first connection */
-            lws_sul_schedule(context, 0, &mco->sul, connect_client, 1);
+            lws_sul_schedule(context, 0, &mco.sul, connect_client, 1);
 
             /* schedule the 1Hz callback */
-            lws_sul_schedule(context, 0, &mco->sul_hz, sul_hz_cb, LWS_US_PER_SEC);
+            lws_sul_schedule(context, 0, &mco.sul_hz, sul_hz_cb, LWS_US_PER_SEC);
             break;
+
+        case LWS_CALLBACK_WSI_DESTROY:
+            return 0;
+
+        default:
+            mco = (struct msg_client_okx *)user;
+            if (!mco)
+                return -1;
+            break;
+    }
+
+    switch (reason) {
 
         case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
             lwsl_err("CLIENT_CONNECTION_ERROR: %s\n", in ? (char *)in : "(null)");
@@ -156,7 +174,7 @@ __attribute__((used)) static int callback_okx(struct lws *wsi, enum lws_callback
                 lwsl_err("Failed to send subscription message\n");
                 return -1;
             }
-            gettimeofday(&start, NULL);
+            gettimeofday(&mco->start, NULL);
             break;
 
         case LWS_CALLBACK_CLIENT_RECEIVE:
@@ -164,8 +182,11 @@ __attribute__((used)) static int callback_okx(struct lws *wsi, enum lws_callback
                 break;
 
             gettimeofday(&now, NULL);
-            latency_us = ((uint64_t)(now.tv_sec - start.tv_sec)) * LWS_US_PER_SEC +
-                (uint64_t)(now.tv_usec - start.tv_usec);
+            if (mco->start.tv_sec == 0 && mco->start.tv_usec == 0)
+                break;
+
+            latency_us = ((uint64_t)(now.tv_sec - mco->start.tv_sec)) * LWS_US_PER_SEC +
+                (uint64_t)(now.tv_usec - mco->start.tv_usec);
             range_add(&mco->e_lat_range, latency_us);
 
             /* Process received data here */
