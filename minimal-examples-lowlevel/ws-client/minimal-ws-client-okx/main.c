@@ -23,6 +23,7 @@ struct msg_client_okx {
     struct range e_lat_range;
     struct lws *client_wsi;
     uint16_t retry_count;
+    struct timeval start;  /* timestamp for latency calculation */
 };
 
 static struct msg_client_okx mco;
@@ -139,6 +140,10 @@ __attribute__((used)) static int callback_okx(struct lws *wsi, enum lws_callback
 
             /* schedule the 1Hz callback */
             lws_sul_schedule(context, 0, &mco.sul_hz, sul_hz_cb, LWS_US_PER_SEC);
+
+            /* Set initial user pointer */
+            if (wsi)
+                lws_set_wsi_user(wsi, &mco);
             break;
 
         case LWS_CALLBACK_WSI_DESTROY:
