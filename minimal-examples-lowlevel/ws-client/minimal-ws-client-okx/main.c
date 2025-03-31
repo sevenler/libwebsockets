@@ -52,6 +52,10 @@ static void range_add(struct range *r, unsigned long long val)
     r->samples++;
 }
 
+/* Forward declarations */
+static int callback_okx(struct lws *wsi, enum lws_callback_reasons reason,
+        void *user, void *in, size_t len);
+
 static const struct lws_protocols protocols[] = {
     { "okx-protocol", callback_okx, sizeof(struct msg_client_okx), 0, 0, NULL, 0 },
     LWS_PROTOCOL_LIST_TERM
@@ -114,7 +118,7 @@ static void connect_client(struct lws_sorted_usec_list *sul)
     mco->connecting = 1;
 }
 
-static int callback_okx(struct lws *wsi, enum lws_callback_reasons reason,
+__attribute__((used)) static int callback_okx(struct lws *wsi, enum lws_callback_reasons reason,
         void *user, void *in, size_t len)
 {
     struct msg_client_okx *mco = (struct msg_client_okx *)user;
