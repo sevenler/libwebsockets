@@ -63,7 +63,7 @@ static const struct lws_protocols protocols[] = {
 
 static void sul_hz_cb(struct lws_sorted_usec_list *sul)
 {
-    struct msg_client_okx *mco = lws_container_of(sul, struct msg_client_okx, sul);
+    struct msg_client_okx *mco = lws_container_of(sul, struct msg_client_okx, sul_hz);
 
     if (mco->price_range.samples)
         lwsl_notice("%s: price: min: %llu, max: %llu, avg: %llu, samples: %d\n",
