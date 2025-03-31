@@ -84,7 +84,7 @@ static void sul_hz_cb(struct lws_sorted_usec_list *sul)
     range_reset(&mco->e_lat_range);
     range_reset(&mco->price_range);
 
-    lws_sul_schedule(mco->context, 0, &mco->sul, sul_hz_cb, LWS_US_PER_SEC);
+    lws_sul_schedule(context, 0, &mco->sul_hz, sul_hz_cb, LWS_US_PER_SEC);
 }
 
 static void connect_client(struct lws_sorted_usec_list *sul)
